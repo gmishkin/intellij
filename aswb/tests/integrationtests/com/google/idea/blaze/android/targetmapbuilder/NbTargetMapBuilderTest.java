@@ -326,11 +326,7 @@ public class NbTargetMapBuilderTest extends BlazeIntegrationTestCase {
                             .addResource(
                                 AndroidResFolder.builder()
                                     .setRoot(source("third_party/quantum/res"))
-                                    .addResources(
-                                        ImmutableList.of(
-                                            "values/strings.xml",
-                                            "values/attrs.xml",
-                                            "layout/menu.xml"))
+                                    .setAar(source("third_party/quantum/resources.aar"))
                                     .build())
                             .setGenerateResourceClass(true)
                             .setResourceJavaPackage("third_party.quantum")))
@@ -416,9 +412,7 @@ public class NbTargetMapBuilderTest extends BlazeIntegrationTestCase {
             android_library(individualLibrary).res("res"),
             android_library(quantum)
                 .manifest("manifest/AndroidManifest.xml")
-                .res_folder(
-                    "//third_party/quantum/res",
-                    ImmutableList.of("values/strings.xml", "values/attrs.xml", "layout/menu.xml")),
+                .res_folder("//third_party/quantum/res", "resources.aar"),
             java_library(guava).source_jar("//third_party/guava-21.jar"),
             aar_import(aarFile)
                 .aar("lib_aar.aar")

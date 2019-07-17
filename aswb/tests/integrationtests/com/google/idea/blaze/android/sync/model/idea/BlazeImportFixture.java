@@ -272,11 +272,11 @@ public final class BlazeImportFixture {
                         .addResource(
                             AndroidResFolder.builder()
                                 .setRoot(source("third_party/quantum/res"))
-                                .addResources(
-                                    ImmutableList.of(
-                                        "values/strings.xml",
-                                        "values/attrs.xml",
-                                        "layout/menu.xml"))
+                                /*.addResources(
+                                ImmutableList.of(
+                                    "values/strings.xml",
+                                    "values/attrs.xml",
+                                    "layout/menu.xml"))*/
                                 .build())
                         .setGenerateResourceClass(true)
                         .setResourceJavaPackage("third_party.quantum")))

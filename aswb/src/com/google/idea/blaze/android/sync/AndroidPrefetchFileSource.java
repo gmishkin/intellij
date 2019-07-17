@@ -15,12 +15,8 @@
  */
 package com.google.idea.blaze.android.sync;
 
-import static java.util.stream.Collectors.toList;
-
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.idea.blaze.android.sync.model.BlazeAndroidSyncData;
-import com.google.idea.blaze.base.command.buildresult.OutputArtifactResolver;
 import com.google.idea.blaze.base.ideinfo.AndroidIdeInfo;
 import com.google.idea.blaze.base.ideinfo.AndroidResFolder;
 import com.google.idea.blaze.base.ideinfo.ArtifactLocation;
@@ -33,7 +29,6 @@ import com.google.idea.blaze.base.prefetch.PrefetchFileSource;
 import com.google.idea.blaze.base.projectview.ProjectViewSet;
 import com.google.idea.blaze.base.sync.projectview.ImportRoots;
 import com.google.idea.blaze.base.sync.projectview.WorkspaceLanguageSettings;
-import com.google.idea.blaze.base.sync.workspace.ArtifactLocationDecoder;
 import com.intellij.openapi.project.Project;
 import java.io.File;
 import java.util.Collection;
@@ -50,23 +45,7 @@ public class AndroidPrefetchFileSource implements PrefetchFileSource, OutputsPro
       ProjectViewSet projectViewSet,
       ImportRoots importRoots,
       BlazeProjectData blazeProjectData,
-      Set<File> files) {
-    BlazeAndroidSyncData syncData = blazeProjectData.getSyncState().get(BlazeAndroidSyncData.class);
-    if (syncData == null) {
-      return;
-    }
-    if (syncData.importResult.resourceLibraries == null) {
-      return;
-    }
-    ArtifactLocationDecoder artifactLocationDecoder = blazeProjectData.getArtifactLocationDecoder();
-    files.addAll(
-        OutputArtifactResolver.resolveAll(
-            project,
-            artifactLocationDecoder,
-            syncData.importResult.resourceLibraries.values().stream()
-                .map(resourceLibrary -> resourceLibrary.root)
-                .collect(toList())));
-  }
+      Set<File> files) {}
 
   @Override
   public Set<String> prefetchFileExtensions() {
