@@ -68,4 +68,11 @@ genrule(
           "sed -i -e 's,//%s:flag_hack,//:flag_hack,g' $@" % _dev_aspect_path,
 )
 
+sh_binary(
+    name = "create_aar",
+    srcs = ["create_aar.sh"],
+    data = ["//third_party/java/android/android_sdk_linux:static_aapt2_tool"],
+    visibility = ["//visibility:public"],
+)
+
 define_flag_hack()

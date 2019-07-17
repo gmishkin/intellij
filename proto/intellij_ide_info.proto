@@ -86,7 +86,9 @@ message ResFolderLocation {
   ArtifactLocation root = 1;
   // Relative paths to the specific res files underneath the root. If empty, all
   // res files
+  // Will it lead to compatible issue if we remove this field?
   repeated string resources = 2;
+  ArtifactLocation aar = 3;
 }
 
 message AndroidSdkIdeInfo {
