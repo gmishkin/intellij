@@ -15,8 +15,7 @@
  */
 package com.google.idea.blaze.android.run.deployinfo;
 
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.rules.android.deployinfo.AndroidDeployInfoOuterClass;
+import com.google.common.collect.ImmutableList;
 import com.google.idea.blaze.android.manifest.ManifestParser;
 import com.google.idea.blaze.android.manifest.ParsedManifestService;
 import com.intellij.openapi.diagnostic.Logger;
@@ -24,77 +23,75 @@ import com.intellij.openapi.project.Project;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
-/** Info about the android_binary/android_test to deploy. */
+/** Info about the deployment phase. */
 public class BlazeAndroidDeployInfo {
   private static final Logger log = Logger.getInstance(BlazeAndroidDeployInfo.class);
   private final Project project;
-  private final File executionRoot;
-  private final AndroidDeployInfoOuterClass.AndroidDeployInfo deployInfo;
+  private final File mergedManifestFile;
+  @Nullable private final File testTargetMergedManifestFile;
+  private final List<File> apksToDeploy;
 
   public BlazeAndroidDeployInfo(
       Project project,
-      File executionRoot,
-      AndroidDeployInfoOuterClass.AndroidDeployInfo deployInfo) {
+      File mergedManifestFile,
+      @Nullable File testTargetMergedManifestFile,
+      List<File> apksToDeploy) {
     this.project = project;
-    this.executionRoot = executionRoot;
-    this.deployInfo = deployInfo;
+    this.mergedManifestFile = mergedManifestFile;
+    this.testTargetMergedManifestFile = testTargetMergedManifestFile;
+    this.apksToDeploy = apksToDeploy;
   }
 
-  public File getMergedManifestFile() {
-    return new File(executionRoot, deployInfo.getMergedManifest().getExecRootPath());
-  }
-
-  @Nullable
+  /**
+   * Returns parsed manifest of the main target for this deployment. During normal app deployment,
+   * the main target is the android_binary that builds the app itself. During instrumentation tests
+   * the main target is the android_binary/android_test target responsible for instrumenting the
+   * app, while the merged manifest of the app under test can be obtained through {@link
+   * BlazeAndroidDeployInfo#getTestTargetMergedManifest()}.
+   */
   public ManifestParser.ParsedManifest getMergedManifest() {
-    File manifestFile = getMergedManifestFile();
     try {
-      return ParsedManifestService.getInstance(project).getParsedManifest(manifestFile);
+      return ParsedManifestService.getInstance(project).getParsedManifest(mergedManifestFile);
     } catch (IOException e) {
-      log.warn("Could not read merged manifest file: " + manifestFile);
+      log.warn(
+          "Could not read main merged manifest file "
+              + mergedManifestFile
+              + " due to error: "
+              + e.getMessage());
       return null;
     }
   }
 
-  private List<File> getAdditionalMergedManifestFiles() {
-    return deployInfo
-        .getAdditionalMergedManifestsList()
-        .stream()
-        .map(artifact -> new File(executionRoot, artifact.getExecRootPath()))
-        .collect(Collectors.toList());
+  /**
+   * Returns parsed manifest of the app under test during an instrumentation test. This method
+   * returns null in all other scenarios.
+   */
+  public ManifestParser.ParsedManifest getTestTargetMergedManifest() {
+    if (testTargetMergedManifestFile == null) {
+      return null;
+    }
+    try {
+      return ParsedManifestService.getInstance(project)
+          .getParsedManifest(testTargetMergedManifestFile);
+    } catch (IOException e) {
+      log.warn(
+          "Could not read test target's merged manifest file: " + testTargetMergedManifestFile);
+      return null;
+    }
   }
 
-  public List<ManifestParser.ParsedManifest> getAdditionalMergedManifest() {
-    return getAdditionalMergedManifestFiles().stream()
-        .map(
-            file -> {
-              try {
-                return ParsedManifestService.getInstance(project).getParsedManifest(file);
-              } catch (IOException e) {
-                log.warn("Could not read merged manifest file: " + file);
-                return null;
-              }
-            })
-        .filter(Objects::nonNull)
-        .collect(Collectors.toList());
-  }
-
-  public List<File> getManifestFiles() {
-    List<File> result = Lists.newArrayList();
-    result.add(getMergedManifestFile());
-    result.addAll(getAdditionalMergedManifestFiles());
-    return result;
+  /** Returns all manifests files involved in this deployment. */
+  ImmutableList<File> getManifestFiles() {
+    if (testTargetMergedManifestFile == null) {
+      return ImmutableList.of(mergedManifestFile);
+    }
+    return ImmutableList.of(mergedManifestFile, testTargetMergedManifestFile);
   }
 
   /** Returns the full list of apks to deploy, if any. */
-  public List<File> getApksToDeploy() {
-    return deployInfo
-        .getApksToDeployList()
-        .stream()
-        .map(artifact -> new File(executionRoot, artifact.getExecRootPath()))
-        .collect(Collectors.toList());
+  List<File> getApksToDeploy() {
+    return apksToDeploy;
   }
 }
