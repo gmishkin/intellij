@@ -19,6 +19,8 @@ import com.android.tools.idea.run.ApkProvisionException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.devtools.build.lib.rules.android.deployinfo.AndroidDeployInfoOuterClass.AndroidDeployInfo;
+import com.google.idea.blaze.android.manifest.ParsedManifestService;
 import com.google.idea.blaze.android.run.deployinfo.BlazeAndroidDeployInfo;
 import com.google.idea.blaze.android.run.deployinfo.BlazeApkDeployInfoProtoHelper;
 import com.google.idea.blaze.base.async.executor.ProgressiveTaskWithProgressIndicator;
@@ -41,12 +43,15 @@ import com.google.idea.blaze.base.model.primitives.WorkspaceRoot;
 import com.google.idea.blaze.base.scope.BlazeContext;
 import com.google.idea.blaze.base.scope.ScopedTask;
 import com.google.idea.blaze.base.scope.output.IssueOutput;
+import com.google.idea.blaze.base.scope.output.StatusOutput;
 import com.google.idea.blaze.base.settings.Blaze;
 import com.google.idea.blaze.base.sync.data.BlazeProjectDataManager;
 import com.google.idea.blaze.base.util.SaveUtil;
 import com.google.idea.blaze.java.AndroidBlazeRules;
 import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.project.Project;
+import java.io.File;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 
 /** Builds the APK using normal blaze build. */
@@ -67,17 +72,12 @@ public class BlazeApkBuildStepNormalBuild implements BlazeApkBuildStep {
    * In case we're dealing with an {@link AndroidBlazeRules.RuleTypes#ANDROID_INSTRUMENTATION_TEST},
    * build the underlying {@link AndroidBlazeRules.RuleTypes#ANDROID_BINARY} instead.
    */
-  private Label getTargetToBuild() {
-    BlazeProjectData projectData =
-        BlazeProjectDataManager.getInstance(project).getBlazeProjectData();
-    if (projectData == null) {
-      return label;
-    }
+  private static Label getTargetToBuild(BlazeProjectData projectData, Label testLabel) {
     TargetMap targetMap = projectData.getTargetMap();
-    TargetIdeInfo target = targetMap.get(TargetKey.forPlainTarget(label));
+    TargetIdeInfo target = targetMap.get(TargetKey.forPlainTarget(testLabel));
     if (target == null
         || target.getKind() != AndroidBlazeRules.RuleTypes.ANDROID_INSTRUMENTATION_TEST.getKind()) {
-      return label;
+      return testLabel;
     }
     for (Dependency dependency : target.getDependencies()) {
       TargetIdeInfo dependencyInfo = targetMap.get(dependency.getTargetKey());
@@ -87,7 +87,7 @@ public class BlazeApkBuildStepNormalBuild implements BlazeApkBuildStep {
         return dependency.getTargetKey().getLabel();
       }
     }
-    return label;
+    return testLabel;
   }
 
   @Override
@@ -97,18 +97,25 @@ public class BlazeApkBuildStepNormalBuild implements BlazeApkBuildStep {
         new ScopedTask<Void>(context) {
           @Override
           protected Void execute(BlazeContext context) {
+            BlazeProjectData projectData =
+                BlazeProjectDataManager.getInstance(project).getBlazeProjectData();
+
+            if (projectData == null) {
+              IssueOutput.error("Missing project data. Please sync and try again.").submit(context);
+              return null;
+            }
+
             BlazeCommand.Builder command =
                 BlazeCommand.builder(
                     Blaze.getBuildSystemProvider(project).getBinaryPath(project),
                     BlazeCommandName.BUILD);
             WorkspaceRoot workspaceRoot = WorkspaceRoot.fromProject(project);
+            File executionRoot = projectData.getBlazeInfo().getExecutionRoot();
 
-            BlazeApkDeployInfoProtoHelper deployInfoHelper =
-                new BlazeApkDeployInfoProtoHelper(project, buildFlags);
             try (BuildResultHelper buildResultHelper = BuildResultHelperProvider.create(project)) {
 
               command
-                  .addTargets(getTargetToBuild())
+                  .addTargets(getTargetToBuild(projectData, label))
                   .addBlazeFlags("--output_groups=+android_deploy_info")
                   .addBlazeFlags(buildFlags)
                   .addBlazeFlags(buildResultHelper.getBuildFlags());
@@ -131,18 +138,23 @@ public class BlazeApkBuildStepNormalBuild implements BlazeApkBuildStep {
                 return null;
               }
               try {
-                deployInfo =
-                    deployInfoHelper.readDeployInfo(
-                        context,
-                        buildResultHelper,
-                        fileName -> fileName.endsWith(".deployinfo.pb"));
+                context.output(new StatusOutput("Reading deployment information..."));
+                AndroidDeployInfo deployInfoProto =
+                    BlazeApkDeployInfoProtoHelper.readDeployInfoProto(
+                        buildResultHelper, fileName -> fileName.endsWith(".deployinfo.pb"));
+
+                if (deployInfoProto == null) {
+                  IssueOutput.error("Could not read apk deploy info from build").submit(context);
+                  return null;
+                }
+
+                deployInfo = new BlazeAndroidDeployInfo(project, executionRoot, deployInfoProto);
+                List<File> manifestFiles = deployInfo.getManifestFiles();
+                ParsedManifestService.getInstance(project).invalidateCachedManifests(manifestFiles);
               } catch (GetArtifactsException e) {
                 IssueOutput.error("Could not read apk deploy info from build: " + e.getMessage())
                     .submit(context);
                 return null;
-              }
-              if (deployInfo == null) {
-                IssueOutput.error("Could not read apk deploy info from build").submit(context);
               }
               return null;
             }

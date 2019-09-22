@@ -23,6 +23,8 @@ import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.UncheckedExecutionException;
+import com.google.devtools.build.lib.rules.android.deployinfo.AndroidDeployInfoOuterClass.AndroidDeployInfo;
+import com.google.idea.blaze.android.manifest.ParsedManifestService;
 import com.google.idea.blaze.android.run.deployinfo.BlazeAndroidDeployInfo;
 import com.google.idea.blaze.android.run.deployinfo.BlazeApkDeployInfoProtoHelper;
 import com.google.idea.blaze.android.run.runner.BlazeAndroidDeviceSelector;
@@ -39,6 +41,7 @@ import com.google.idea.blaze.base.command.buildresult.BuildResultHelper.GetArtif
 import com.google.idea.blaze.base.command.buildresult.BuildResultHelperProvider;
 import com.google.idea.blaze.base.console.BlazeConsoleLineProcessorProvider;
 import com.google.idea.blaze.base.filecache.FileCaches;
+import com.google.idea.blaze.base.model.BlazeProjectData;
 import com.google.idea.blaze.base.model.primitives.Label;
 import com.google.idea.blaze.base.model.primitives.WorkspaceRoot;
 import com.google.idea.blaze.base.scope.BlazeContext;
@@ -47,11 +50,13 @@ import com.google.idea.blaze.base.scope.output.IssueOutput;
 import com.google.idea.blaze.base.scope.output.StatusOutput;
 import com.google.idea.blaze.base.settings.Blaze;
 import com.google.idea.blaze.base.settings.BuildSystem;
+import com.google.idea.blaze.base.sync.data.BlazeProjectDataManager;
 import com.google.idea.blaze.base.util.SaveUtil;
 import com.google.idea.common.experiments.BoolExperiment;
 import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.project.Project;
 import java.io.File;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import javax.annotation.Nullable;
 import org.jetbrains.android.sdk.AndroidSdkUtils;
@@ -84,6 +89,14 @@ public class BlazeApkBuildStepMobileInstall implements BlazeApkBuildStep {
         new ScopedTask<Void>(context) {
           @Override
           protected Void execute(BlazeContext context) {
+            BlazeProjectData projectData =
+                BlazeProjectDataManager.getInstance(project).getBlazeProjectData();
+
+            if (projectData == null) {
+              IssueOutput.error("Missing project data. Please sync and try again.").submit(context);
+              return null;
+            }
+
             DeviceFutures deviceFutures = deviceSession.deviceFutures;
             assert deviceFutures != null;
 
@@ -113,6 +126,7 @@ public class BlazeApkBuildStepMobileInstall implements BlazeApkBuildStep {
             }
 
             WorkspaceRoot workspaceRoot = WorkspaceRoot.fromProject(project);
+            File executionRoot = projectData.getBlazeInfo().getExecutionRoot();
 
             // Use the correct DeployInfo file suffix for mobile-install classic (bazel).
             // This should be removed once mobile-install v2 is open sourced, at which point
@@ -122,8 +136,6 @@ public class BlazeApkBuildStepMobileInstall implements BlazeApkBuildStep {
                     ? "_incremental.deployinfo.pb"
                     : "_mi.deployinfo.pb";
 
-            BlazeApkDeployInfoProtoHelper deployInfoHelper =
-                new BlazeApkDeployInfoProtoHelper(project, blazeFlags);
             try (BuildResultHelper buildResultHelper = BuildResultHelperProvider.create(project)) {
 
               command
@@ -152,18 +164,22 @@ public class BlazeApkBuildStepMobileInstall implements BlazeApkBuildStep {
               }
               try {
                 context.output(new StatusOutput("Reading deployment information..."));
-                deployInfo =
-                    deployInfoHelper.readDeployInfo(
-                        context,
-                        buildResultHelper,
-                        fileName -> fileName.endsWith(deployInfoSuffix));
+                AndroidDeployInfo deployInfoProto =
+                    BlazeApkDeployInfoProtoHelper.readDeployInfoProto(
+                        buildResultHelper, fileName -> fileName.endsWith(deployInfoSuffix));
+
+                if (deployInfoProto == null) {
+                  IssueOutput.error("Could not read apk deploy info from build").submit(context);
+                  return null;
+                }
+
+                deployInfo = new BlazeAndroidDeployInfo(project, executionRoot, deployInfoProto);
+                List<File> manifestFiles = deployInfo.getManifestFiles();
+                ParsedManifestService.getInstance(project).invalidateCachedManifests(manifestFiles);
               } catch (GetArtifactsException e) {
                 IssueOutput.error("Could not read apk deploy info from build: " + e.getMessage())
                     .submit(context);
                 return null;
-              }
-              if (deployInfo == null) {
-                IssueOutput.error("Could not read apk deploy info from build").submit(context);
               }
               return null;
             }

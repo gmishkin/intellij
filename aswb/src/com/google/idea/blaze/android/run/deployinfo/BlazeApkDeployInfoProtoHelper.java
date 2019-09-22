@@ -15,27 +15,17 @@
  */
 package com.google.idea.blaze.android.run.deployinfo;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.util.concurrent.ListenableFuture;
 import com.google.devtools.build.lib.rules.android.deployinfo.AndroidDeployInfoOuterClass;
-import com.google.idea.blaze.android.manifest.ParsedManifestService;
+import com.google.devtools.build.lib.rules.android.deployinfo.AndroidDeployInfoOuterClass.AndroidDeployInfo;
 import com.google.idea.blaze.base.command.buildresult.BlazeArtifact;
 import com.google.idea.blaze.base.command.buildresult.BuildResultHelper;
 import com.google.idea.blaze.base.command.buildresult.BuildResultHelper.GetArtifactsException;
-import com.google.idea.blaze.base.command.info.BlazeInfo;
-import com.google.idea.blaze.base.command.info.BlazeInfoRunner;
-import com.google.idea.blaze.base.model.primitives.WorkspaceRoot;
-import com.google.idea.blaze.base.scope.BlazeContext;
-import com.google.idea.blaze.base.settings.Blaze;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
@@ -43,19 +33,9 @@ import javax.annotation.Nullable;
 public class BlazeApkDeployInfoProtoHelper {
   private static final Logger LOG = Logger.getInstance(BlazeApkDeployInfoProtoHelper.class);
 
-  private final Project project;
-  private final WorkspaceRoot workspaceRoot;
-  private final ImmutableList<String> buildFlags;
-
-  public BlazeApkDeployInfoProtoHelper(Project project, ImmutableList<String> buildFlags) {
-    this.project = project;
-    this.buildFlags = buildFlags;
-    this.workspaceRoot = WorkspaceRoot.fromProject(project);
-  }
-
   @Nullable
-  public BlazeAndroidDeployInfo readDeployInfo(
-      BlazeContext context, BuildResultHelper buildResultHelper, Predicate<String> pathFilter)
+  public static AndroidDeployInfo readDeployInfoProto(
+      BuildResultHelper buildResultHelper, Predicate<String> pathFilter)
       throws GetArtifactsException {
     File deployInfoFile =
         Iterables.getOnlyElement(
@@ -63,44 +43,13 @@ public class BlazeApkDeployInfoProtoHelper {
     if (deployInfoFile == null) {
       return null;
     }
-    AndroidDeployInfoOuterClass.AndroidDeployInfo deployInfo;
+    AndroidDeployInfo deployInfo;
     try (InputStream inputStream = new FileInputStream(deployInfoFile)) {
       deployInfo = AndroidDeployInfoOuterClass.AndroidDeployInfo.parseFrom(inputStream);
     } catch (IOException e) {
       LOG.error(e);
       return null;
     }
-    String executionRoot = getExecutionRoot(context);
-    if (executionRoot == null) {
-      return null;
-    }
-    BlazeAndroidDeployInfo androidDeployInfo =
-        new BlazeAndroidDeployInfo(project, new File(executionRoot), deployInfo);
-
-    List<File> manifestFiles = androidDeployInfo.getManifestFiles();
-    ParsedManifestService.getInstance(project).invalidateCachedManifests(manifestFiles);
-
-    return androidDeployInfo;
-  }
-
-  @Nullable
-  private String getExecutionRoot(BlazeContext context) {
-    ListenableFuture<String> execRootFuture =
-        BlazeInfoRunner.getInstance()
-            .runBlazeInfo(
-                context,
-                Blaze.getBuildSystemProvider(project).getBinaryPath(project),
-                workspaceRoot,
-                buildFlags,
-                BlazeInfo.EXECUTION_ROOT_KEY);
-    try {
-      return execRootFuture.get();
-    } catch (InterruptedException e) {
-      context.setCancelled();
-    } catch (ExecutionException e) {
-      LOG.error(e);
-      context.setHasError();
-    }
-    return null;
+    return deployInfo;
   }
 }
