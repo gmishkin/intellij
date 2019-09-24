@@ -54,12 +54,18 @@ public abstract class SyncStats {
 
   public abstract int targetMapSize();
 
+  public abstract int numLibraries();
+
+  public abstract Duration postBlazeSyncTime();
+
   public static Builder builder() {
     return new AutoValue_SyncStats.Builder()
         .setBlazeExecTime(Duration.ZERO)
         .setWorkspaceType(WorkspaceType.JAVA)
         .setTargetMapSize(0)
-        .setLanguagesActive(ImmutableList.of());
+        .setLanguagesActive(ImmutableList.of())
+        .setNumLibraries(0)
+        .setPostBlazeSyncTime(Duration.ZERO);
   }
 
   /** Auto value builder for SyncStats. */
@@ -108,6 +114,9 @@ public abstract class SyncStats {
       return this;
     }
 
+    public abstract Builder setNumLibraries(int numLibraries);
+
+    public abstract Builder setPostBlazeSyncTime(Duration postBlazeSyncTime);
 
     public abstract SyncStats build();
   }

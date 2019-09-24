@@ -58,6 +58,7 @@ import com.google.idea.blaze.base.sync.aspects.BuildResult;
 import com.google.idea.blaze.base.sync.data.BlazeDataStorage;
 import com.google.idea.blaze.base.sync.data.BlazeProjectDataManager;
 import com.google.idea.blaze.base.sync.data.BlazeProjectDataManagerImpl;
+import com.google.idea.blaze.base.sync.libraries.BlazeLibraryCollector;
 import com.google.idea.blaze.base.sync.projectstructure.ModuleFinder;
 import com.google.idea.blaze.base.util.SaveUtil;
 import com.google.idea.common.concurrency.ConcurrencyUtil;
@@ -479,18 +480,28 @@ final class SyncPhaseCoordinator {
                   project, context, projectViewSet, projectData, syncParams.syncMode));
         }
         if (projectData != null) {
-          stats.setTargetMapSize(projectData.getTargetMap().targets().size());
+          int numLibraries = BlazeLibraryCollector.getLibraries(projectViewSet, projectData).size();
+          stats
+              .setTargetMapSize(projectData.getTargetMap().targets().size())
+              .setNumLibraries(numLibraries);
         }
         onSyncComplete(project, context, projectViewSet, projectData, syncParams, syncResult);
       }
+
+      Duration totalBlazeTime = totalBlazeTime(stats.getCurrentTimedEvents());
+      Duration totalClockTime = Duration.between(startTime, Instant.now());
+      Duration postBlazeTime = totalClockTime.minus(totalBlazeTime);
+
       stats
           .setSyncMode(syncParams.syncMode)
           .setSyncTitle(syncParams.title)
           .setSyncBinaryType(Blaze.getBuildSystemProvider(project).getSyncBinaryType())
           .setSyncResult(syncResult)
           .setStartTime(startTime)
-          .setBlazeExecTime(totalBlazeTime(stats.getCurrentTimedEvents()))
-          .setTotalClockTime(Duration.between(startTime, Instant.now()));
+          .setBlazeExecTime(totalBlazeTime)
+          .setTotalClockTime(totalClockTime)
+          .setPostBlazeSyncTime(postBlazeTime);
+
       EventLoggingService.getInstance().log(stats.build());
       context.output(new StatusOutput("Sync finished"));
       outputTimingSummary(context, stats.getCurrentTimedEvents());
